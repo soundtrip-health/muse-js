@@ -9,7 +9,7 @@ Modern JavaScript library for Muse EEG headsets using the Web Bluetooth API.
 - ✅ **Muse 1** (2016)
 - ✅ **Muse 2**
 - ✅ **Muse S** (Classic)
-- 🚧 **Muse 3 / S Athena** - Basic support implemented, full support in progress (see [MUSE3_IMPLEMENTATION.md](./MUSE3_IMPLEMENTATION.md))
+- 🚧 **Muse 3 / S Athena** - Basic support implemented, full support in progress (see [MUSE3_STATUS.md](./MUSE3_STATUS.md))
 
 ## Features
 
@@ -79,7 +79,7 @@ main();
 - 🎨 Demo now uses Vite instead of FuseBox (faster HMR, better DX)
 - 🤖 GitHub Actions CI (replaced Travis CI)
 - 🚀 Better Node.js 18+ compatibility
-- 🧠 Foundation for Muse 3 (S Athena) support
+- 🧠 Muse 3 (S Athena) support implemented, full support in progress (see [MUSE3_STATUS.md](./MUSE3_STATUS.md))
 
 ## Using in Node.js
 

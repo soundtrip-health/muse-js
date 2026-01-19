@@ -7,8 +7,27 @@ declare let global: typeof globalThis;
 
 let museDevice: DeviceMock;
 
+// Muse 3 characteristic UUID - used to detect device type
+const MUSE3_EEG_CHARACTERISTIC = '273e0013-4c4d-454d-96be-f03bac821358';
+
 function charCodes(s: string): number[] {
     return s.split('').map((c) => c.charCodeAt(0));
+}
+
+/**
+ * Configure mock to simulate a Classic Muse (1/2/S) device by making
+ * the Muse 3 characteristic throw an error when accessed
+ */
+function configureAsClassicMuse(device: DeviceMock) {
+    const service = device.getServiceMock(0xfe8d);
+    const originalGetCharacteristic = service.getCharacteristic.bind(service);
+
+    service.getCharacteristic = jest.fn((uuid: string) => {
+        if (uuid === MUSE3_EEG_CHARACTERISTIC) {
+            return Promise.reject(new Error('Characteristic not found'));
+        }
+        return originalGetCharacteristic(uuid);
+    });
 }
 
 describe('MuseClient', () => {
@@ -17,6 +36,9 @@ describe('MuseClient', () => {
         global.navigator = global.navigator || {};
         global.navigator.bluetooth = new WebBluetoothMock([museDevice]) as any;
         Object.assign(global, { TextDecoder, TextEncoder });
+
+        // Configure as Classic Muse by default for existing tests
+        configureAsClassicMuse(museDevice);
     });
 
     describe('connect', () => {
