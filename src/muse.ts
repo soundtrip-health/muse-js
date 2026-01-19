@@ -36,6 +36,8 @@ export {
 };
 
 export const MUSE_SERVICE = 0xfe8d;
+
+// Muse 1/2/S (Classic) Characteristics
 const CONTROL_CHARACTERISTIC = '273e0001-4c4d-454d-96be-f03bac821358';
 const TELEMETRY_CHARACTERISTIC = '273e000b-4c4d-454d-96be-f03bac821358';
 const GYROSCOPE_CHARACTERISTIC = '273e0009-4c4d-454d-96be-f03bac821358';
@@ -57,35 +59,74 @@ const EEG_CHARACTERISTICS = [
 export const EEG_FREQUENCY = 256;
 export const EEG_SAMPLES_PER_READING = 12;
 
+// Muse 3 (S Athena) Characteristics
+// Note: Muse 3 uses different data characteristics for its advanced sensors
+// TODO: Implement Muse 3 data streaming using these characteristics
+const _MUSE3_EEG_CHARACTERISTIC = '273e0013-4c4d-454d-96be-f03bac821358';
+const _MUSE3_OTHER_CHARACTERISTIC = '273e0014-4c4d-454d-96be-f03bac821358';
+
+// Muse 3 Presets
+// p1041, p1042: EEG8 + Optics16 + ACC/GYRO + Battery (bright LED)
+// p1035: EEG4 + Optics4 + ACC/GYRO + Battery (dim LED)
+// p1034, p1043: EEG8 + Optics8 + ACC/GYRO + Battery (bright LED)
+// p1044: EEG8 + Optics8 + ACC/GYRO + Battery (dim LED)
+// p20, p21, p50, p51, p60, p61: EEG4 + ACC/GYRO + Battery (LED off)
+export type MusePreset =
+    | 'p20'
+    | 'p21'
+    | 'p50'
+    | 'p51'
+    | 'p60'
+    | 'p61'
+    | 'p1034'
+    | 'p1035'
+    | 'p1041'
+    | 'p1042'
+    | 'p1043'
+    | 'p1044'
+    | 'p1045'
+    | 'p1046'
+    | 'p4129';
+
+export enum MuseDeviceType {
+    MUSE_1_2_S = 'Muse 1/2/S',
+    MUSE_3 = 'Muse 3 (S Athena)',
+}
+
 // These names match the characteristics defined in PPG_CHARACTERISTICS above
 export const ppgChannelNames = ['ambient', 'infrared', 'red'];
 
 // These names match the characteristics defined in EEG_CHARACTERISTICS above
 export const channelNames = ['TP9', 'AF7', 'AF8', 'TP10', 'AUX'];
 
+// Muse 3 channel names (8 EEG channels)
+export const muse3ChannelNames = ['TP9', 'AF7', 'AF8', 'TP10', 'FPz', 'AUX_R', 'AUX_L', 'AUX'];
+
 export class MuseClient {
     enableAux = false;
     enablePpg = false;
     deviceName: string | null = '';
+    deviceType: MuseDeviceType = MuseDeviceType.MUSE_1_2_S;
     connectionStatus = new BehaviorSubject<boolean>(false);
-    rawControlData: Observable<string>;
-    controlResponses: Observable<MuseControlResponse>;
-    telemetryData: Observable<TelemetryData>;
-    gyroscopeData: Observable<GyroscopeData>;
-    accelerometerData: Observable<AccelerometerData>;
-    eegReadings: Observable<EEGReading>;
-    ppgReadings: Observable<PPGReading>;
-    eventMarkers: Subject<EventMarker>;
+    rawControlData!: Observable<string>;
+    controlResponses!: Observable<MuseControlResponse>;
+    telemetryData!: Observable<TelemetryData>;
+    gyroscopeData!: Observable<GyroscopeData>;
+    accelerometerData!: Observable<AccelerometerData>;
+    eegReadings!: Observable<EEGReading>;
+    ppgReadings!: Observable<PPGReading>;
+    eventMarkers!: Subject<EventMarker>;
 
     private gatt: BluetoothRemoteGATTServer | null = null;
-    private controlChar: BluetoothRemoteGATTCharacteristic;
-    private eegCharacteristics: BluetoothRemoteGATTCharacteristic[];
-    private ppgCharacteristics: BluetoothRemoteGATTCharacteristic[];
+    private controlChar!: BluetoothRemoteGATTCharacteristic;
+    private eegCharacteristics!: BluetoothRemoteGATTCharacteristic[];
+    private ppgCharacteristics!: BluetoothRemoteGATTCharacteristic[];
 
     private lastIndex: number | null = null;
     private lastTimestamp: number | null = null;
 
     async connect(gatt?: BluetoothRemoteGATTServer) {
+        console.log('muse-js v4.0.0 - Muse 3 detection enabled');
         if (gatt) {
             this.gatt = gatt;
         } else {
@@ -112,19 +153,47 @@ export class MuseClient {
         );
         this.controlResponses = parseControl(this.rawControlData);
 
-        // Battery
-        const telemetryCharacteristic = await service.getCharacteristic(TELEMETRY_CHARACTERISTIC);
-        this.telemetryData = (await observableCharacteristic(telemetryCharacteristic)).pipe(map(parseTelemetry));
+        // Try to detect device type by checking for Muse 3 characteristics
+        try {
+            const muse3EegChar = await service.getCharacteristic(_MUSE3_EEG_CHARACTERISTIC);
+            if (muse3EegChar) {
+                this.deviceType = MuseDeviceType.MUSE_3;
+                console.log('Detected Muse 3 (S Athena) device');
+            }
+        } catch {
+            this.deviceType = MuseDeviceType.MUSE_1_2_S;
+            console.log('Detected Muse 1/2/S (Classic) device');
+        }
 
-        // Gyroscope
-        const gyroscopeCharacteristic = await service.getCharacteristic(GYROSCOPE_CHARACTERISTIC);
-        this.gyroscopeData = (await observableCharacteristic(gyroscopeCharacteristic)).pipe(map(parseGyroscope));
+        // Battery/Telemetry (not available on Muse 3)
+        try {
+            const telemetryCharacteristic = await service.getCharacteristic(TELEMETRY_CHARACTERISTIC);
+            this.telemetryData = (await observableCharacteristic(telemetryCharacteristic)).pipe(map(parseTelemetry));
+        } catch (err) {
+            console.warn('Telemetry characteristic not available (expected for Muse 3)');
+            // Create empty observable for Muse 3
+            this.telemetryData = new Subject<TelemetryData>();
+        }
 
-        // Accelerometer
-        const accelerometerCharacteristic = await service.getCharacteristic(ACCELEROMETER_CHARACTERISTIC);
-        this.accelerometerData = (await observableCharacteristic(accelerometerCharacteristic)).pipe(
-            map(parseAccelerometer),
-        );
+        // Gyroscope (not available on Muse 3 via old characteristic)
+        try {
+            const gyroscopeCharacteristic = await service.getCharacteristic(GYROSCOPE_CHARACTERISTIC);
+            this.gyroscopeData = (await observableCharacteristic(gyroscopeCharacteristic)).pipe(map(parseGyroscope));
+        } catch (err) {
+            console.warn('Gyroscope characteristic not available (expected for Muse 3)');
+            this.gyroscopeData = new Subject<GyroscopeData>();
+        }
+
+        // Accelerometer (not available on Muse 3 via old characteristic)
+        try {
+            const accelerometerCharacteristic = await service.getCharacteristic(ACCELEROMETER_CHARACTERISTIC);
+            this.accelerometerData = (await observableCharacteristic(accelerometerCharacteristic)).pipe(
+                map(parseAccelerometer),
+            );
+        } catch (err) {
+            console.warn('Accelerometer characteristic not available (expected for Muse 3)');
+            this.accelerometerData = new Subject<AccelerometerData>();
+        }
 
         this.eventMarkers = new Subject();
 
@@ -157,26 +226,36 @@ export class MuseClient {
         // EEG
         this.eegCharacteristics = [];
         const eegObservables = [];
-        const channelCount = this.enableAux ? EEG_CHARACTERISTICS.length : 4;
-        for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-            const characteristicId = EEG_CHARACTERISTICS[channelIndex];
-            const eegChar = await service.getCharacteristic(characteristicId);
-            eegObservables.push(
-                (await observableCharacteristic(eegChar)).pipe(
-                    map((data) => {
-                        const eventIndex = data.getUint16(0);
-                        return {
-                            electrode: channelIndex,
-                            index: eventIndex,
-                            samples: decodeEEGSamples(new Uint8Array(data.buffer).subarray(2)),
-                            timestamp: this.getTimestamp(eventIndex, EEG_SAMPLES_PER_READING, EEG_FREQUENCY),
-                        };
-                    }),
-                ),
-            );
-            this.eegCharacteristics.push(eegChar);
+
+        if (this.deviceType === MuseDeviceType.MUSE_3) {
+            console.warn('Muse 3 EEG streaming not yet fully implemented');
+            console.log('See MUSE3_IMPLEMENTATION.md for implementation details');
+            // TODO: Implement Muse 3 EEG streaming using _MUSE3_EEG_CHARACTERISTIC
+            this.eegReadings = new Subject<EEGReading>();
+        } else {
+            // Muse 1/2/S (Classic) EEG characteristics
+            const channelCount = this.enableAux ? EEG_CHARACTERISTICS.length : 4;
+            for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
+                const characteristicId = EEG_CHARACTERISTICS[channelIndex];
+                const eegChar = await service.getCharacteristic(characteristicId);
+                eegObservables.push(
+                    (await observableCharacteristic(eegChar)).pipe(
+                        map((data) => {
+                            const eventIndex = data.getUint16(0);
+                            return {
+                                electrode: channelIndex,
+                                index: eventIndex,
+                                samples: decodeEEGSamples(new Uint8Array(data.buffer).subarray(2)),
+                                timestamp: this.getTimestamp(eventIndex, EEG_SAMPLES_PER_READING, EEG_FREQUENCY),
+                            };
+                        }),
+                    ),
+                );
+                this.eegCharacteristics.push(eegChar);
+            }
+            this.eegReadings = merge(...eegObservables);
         }
-        this.eegReadings = merge(...eegObservables);
+
         this.connectionStatus.next(true);
     }
 

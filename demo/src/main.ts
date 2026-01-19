@@ -1,8 +1,39 @@
-// tslint:disable:no-console
+import { channelNames, EEGReading, MuseClient } from '../../dist/index.mjs';
 
-import { channelNames, EEGReading, MuseClient } from './../../src/muse';
+// Simple heart rate calculation using peak detection
+function calculateHeartRate(ppgBuffer: number[]): number {
+    if (ppgBuffer.length < 20) return 0;
 
-(window as any).connect = async () => {
+    // Find peaks in the PPG signal
+    const peaks: number[] = [];
+    const threshold = (Math.max(...ppgBuffer) + Math.min(...ppgBuffer)) / 2;
+
+    for (let i = 1; i < ppgBuffer.length - 1; i++) {
+        if (ppgBuffer[i] > threshold && ppgBuffer[i] > ppgBuffer[i - 1] && ppgBuffer[i] > ppgBuffer[i + 1]) {
+            peaks.push(i);
+        }
+    }
+
+    if (peaks.length < 2) return 0;
+
+    // Calculate average interval between peaks
+    const intervals: number[] = [];
+    for (let i = 1; i < peaks.length; i++) {
+        intervals.push(peaks[i] - peaks[i - 1]);
+    }
+
+    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+
+    // Convert to BPM (assuming 50Hz sampling rate for PPG)
+    const bpm = (60 * 50) / avgInterval;
+
+    // Sanity check - return 0 if outside reasonable range
+    if (bpm < 40 || bpm > 200) return 0;
+
+    return bpm;
+}
+
+async function connect() {
     const graphTitles = Array.from(document.querySelectorAll('.electrode-item h3'));
     const canvases = Array.from(document.querySelectorAll('.electrode-item canvas')) as HTMLCanvasElement[];
     const canvasCtx = canvases.map((canvas) => canvas.getContext('2d'));
@@ -23,7 +54,7 @@ import { channelNames, EEGReading, MuseClient } from './../../src/muse';
         context.clearRect(0, 0, canvas.width, canvas.height);
 
         for (let i = 0; i < reading.samples.length; i++) {
-            const sample = reading.samples[i] / 15.;
+            const sample = reading.samples[i] / 15;
             if (sample > 0) {
                 context.fillRect(i * 25, height - sample, width, sample);
             } else {
@@ -37,11 +68,26 @@ import { channelNames, EEGReading, MuseClient } from './../../src/muse';
         console.log(status ? 'Connected!' : 'Disconnected');
     });
 
+    // Check if PPG should be enabled
+    const ppgCheckbox = document.getElementById('enable-ppg') as HTMLInputElement;
+    const enablePpg = ppgCheckbox && ppgCheckbox.checked;
+
     try {
         client.enableAux = true;
+
+        if (enablePpg) {
+            client.enablePpg = true;
+            console.log('PPG enabled');
+            // Show PPG section
+            const ppgSection = document.getElementById('ppg-section');
+            if (ppgSection) {
+                ppgSection.style.display = 'block';
+            }
+        }
+
         await client.connect();
         await client.start();
-        document.getElementById('headset-name')!.innerText = client.deviceName;
+        document.getElementById('headset-name')!.innerText = client.deviceName || 'unknown';
         client.eegReadings.subscribe((reading) => {
             plot(reading);
         });
@@ -50,11 +96,49 @@ import { channelNames, EEGReading, MuseClient } from './../../src/muse';
             document.getElementById('batteryLevel')!.innerText = reading.batteryLevel.toFixed(2) + '%';
         });
         client.accelerometerData.subscribe((accel) => {
-            const normalize = (v: number) => (v / 16384.).toFixed(2) + 'g';
-            document.getElementById('accelerometer-x')!.innerText = normalize(accel.samples[2].x);
-            document.getElementById('accelerometer-y')!.innerText = normalize(accel.samples[2].y);
-            document.getElementById('accelerometer-z')!.innerText = normalize(accel.samples[2].z);
+            // Data is already scaled to G in parseAccelerometer (scale: 0.0000610352 = 2.0/32768)
+            document.getElementById('accelerometer-x')!.innerText = accel.samples[2].x.toFixed(2);
+            document.getElementById('accelerometer-y')!.innerText = accel.samples[2].y.toFixed(2);
+            document.getElementById('accelerometer-z')!.innerText = accel.samples[2].z.toFixed(2);
         });
+        client.gyroscopeData.subscribe((gyro) => {
+            // Data is already scaled to °/s in parseGyroscope (scale: 0.0074768 ≈ 250/32768)
+            document.getElementById('gyroscope-x')!.innerText = gyro.samples[2].x.toFixed(2);
+            document.getElementById('gyroscope-y')!.innerText = gyro.samples[2].y.toFixed(2);
+            document.getElementById('gyroscope-z')!.innerText = gyro.samples[2].z.toFixed(2);
+        });
+
+        if (enablePpg) {
+            client.ppgReadings.subscribe((ppg) => {
+                // Display PPG channel values (using last sample for simplicity)
+                const lastSample = ppg.samples[ppg.samples.length - 1];
+                document.getElementById('ppg-ambient')!.innerText = lastSample.ambient.toString();
+                document.getElementById('ppg-infrared')!.innerText = lastSample.infrared.toString();
+                document.getElementById('ppg-red')!.innerText = lastSample.red.toString();
+            });
+
+            // Simple heart rate calculation from PPG infrared channel
+            // This is a very basic peak detection - a real implementation would be more sophisticated
+            const ppgBuffer: number[] = [];
+            const BUFFER_SIZE = 100;
+            client.ppgReadings.subscribe((ppg) => {
+                ppg.samples.forEach((sample) => {
+                    ppgBuffer.push(sample.infrared);
+                    if (ppgBuffer.length > BUFFER_SIZE) {
+                        ppgBuffer.shift();
+                    }
+                });
+
+                // Calculate heart rate every 100 samples (roughly every 2 seconds at 50Hz)
+                if (ppgBuffer.length >= BUFFER_SIZE) {
+                    const hr = calculateHeartRate(ppgBuffer);
+                    if (hr > 0) {
+                        document.getElementById('heart-rate')!.innerText = hr.toFixed(0);
+                    }
+                }
+            });
+        }
+
         await client.deviceInfo().then((deviceInfo) => {
             document.getElementById('hardware-version')!.innerText = deviceInfo.hw;
             document.getElementById('firmware-version')!.innerText = deviceInfo.fw;
@@ -62,4 +146,13 @@ import { channelNames, EEGReading, MuseClient } from './../../src/muse';
     } catch (err) {
         console.error('Connection failed', err);
     }
-};
+}
+
+// Attach event listener when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    const button = document.getElementById('connect-button');
+    if (button) {
+        button.addEventListener('click', connect);
+        console.log('Connect button ready!');
+    }
+});

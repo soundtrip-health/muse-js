@@ -1,15 +1,48 @@
 # muse-js
 
-[![Build Status](https://travis-ci.org/urish/muse-js.png?branch=master)](https://travis-ci.org/urish/muse-js)
+[![CI](https://github.com/urish/muse-js/actions/workflows/ci.yml/badge.svg)](https://github.com/urish/muse-js/actions/workflows/ci.yml)
 
-Muse 1, Muse 2, and Muse S EEG Headset JavaScript Library (using Web Bluetooth).
+Modern JavaScript library for Muse EEG headsets using the Web Bluetooth API.
 
-## Running the demo app
+## Supported Devices
 
-    yarn
-    yarn start
+- ✅ **Muse 1** (2016)
+- ✅ **Muse 2**
+- ✅ **Muse S** (Classic)
+- 🚧 **Muse 3 / S Athena** - Basic support implemented, full support in progress (see [MUSE3_IMPLEMENTATION.md](./MUSE3_IMPLEMENTATION.md))
 
-and then open http://localhost:4445/
+## Features
+
+- 🧠 Real-time EEG data streaming
+- 📊 PPG (Photoplethysmography) sensor support
+- 📐 Accelerometer and gyroscope data
+- 🔋 Battery and telemetry information
+- 🎯 Event markers for experiments
+- 📦 Dual ESM/CommonJS builds
+- 💪 Written in TypeScript
+- 🌐 Works in modern browsers via Web Bluetooth API
+- 📱 Node.js support
+
+## Installation
+
+```bash
+npm install muse-js
+```
+
+## Running the Demo App
+
+The demo application showcases real-time EEG visualization:
+
+```bash
+# Install dependencies
+npm install
+npm run demo:install
+
+# Start the demo server
+npm start
+```
+
+Then open http://localhost:4445/ in your browser.
 
 ## Usage example
 
@@ -35,34 +68,22 @@ async function main() {
 main();
 ```
 
-## Using in node.js
+## What's New in v4.0
 
-You can use this library to connect to the Muse EEG headset from your node.js application.
-Use the [bleat](https://github.com/thegecko/bleat) package which emulates the Web Bluetooth API on top of [noble](https://github.com/sandeepmistry/noble):
+🎉 **Major modernization update!**
 
-```javascript
-const noble = require('noble');
-const bluetooth = require('bleat').webbluetooth;
+- ⚡ Modern build system with dual ESM/CommonJS output via [tsup](https://tsup.egoist.dev/)
+- 📦 TypeScript 5.x with modern ES2020 target
+- ✅ Updated to latest dependencies (RxJS 7, Jest 29, ESLint)
+- 🔄 Replaced deprecated TSLint with ESLint
+- 🎨 Demo now uses Vite instead of FuseBox (faster HMR, better DX)
+- 🤖 GitHub Actions CI (replaced Travis CI)
+- 🚀 Better Node.js 18+ compatibility
+- 🧠 Foundation for Muse 3 (S Athena) support
 
-async function connect() {
-    let device = await bluetooth.requestDevice({
-        filters: [{ services: [MUSE_SERVICE] }]
-    });
-    const gatt = await device.gatt.connect();
-    const client = new MuseClient();
-    await client.connect(gatt);
-    await client.start();
-    // Now do whatever with muse client...
-}
+## Using in Node.js
 
-noble.on('stateChange', (state) => {
-    if (state === 'poweredOn') {
-        connect();
-    }
-});
-```
-
-You can find a fully working example in the [muse-lsl repo](https://github.com/urish/muse-lsl/blob/master/index.js).
+The library uses the Web Bluetooth API directly. For Node.js support, you can use packages that provide Web Bluetooth compatibility, such as [@abandonware/noble](https://github.com/abandonware/noble) with a Web Bluetooth wrapper, or use the [muse-lsl project](https://github.com/urish/muse-lsl) which provides a working Node.js implementation.
 
 ## Auxiliary Electrode
 

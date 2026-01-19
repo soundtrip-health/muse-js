@@ -2,7 +2,7 @@ import { encodeCommand } from './muse-utils';
 
 import { TextDecoder, TextEncoder } from 'text-encoding'; // polyfill
 
-declare var global: any;
+declare let global: any;
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 

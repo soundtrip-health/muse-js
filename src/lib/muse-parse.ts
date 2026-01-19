@@ -1,20 +1,34 @@
 import { Observable } from 'rxjs';
 import { concatMap, filter, map, scan } from 'rxjs/operators';
 
-import { AccelerometerData, EEGReading, GyroscopeData, PPGReading, TelemetryData } from './muse-interfaces';
+import { AccelerometerData, GyroscopeData, TelemetryData } from './muse-interfaces';
 
 export function parseControl(controlData: Observable<string>) {
     return controlData.pipe(
         concatMap((data) => data.split('')),
         scan((acc, value) => {
-            if (acc.indexOf('}') >= 0) {
-                return value;
-            } else {
-                return acc + value;
+            // Start collecting when we see an opening brace
+            if (value === '{') {
+                return '{';
             }
+            // If we've seen a closing brace, reset and check if this is a new opening brace
+            if (acc.indexOf('}') >= 0) {
+                return value === '{' ? '{' : '';
+            }
+            // Otherwise, keep accumulating
+            return acc + value;
         }, ''),
-        filter((value) => value.indexOf('}') >= 0),
-        map((value) => JSON.parse(value)),
+        filter((value) => value.indexOf('{') >= 0 && value.indexOf('}') >= 0),
+        map((value) => {
+            try {
+                return JSON.parse(value);
+            } catch (err) {
+                console.warn('Failed to parse control response as JSON:', value);
+                console.warn('Error:', err);
+                // Return a minimal valid response object
+                return { rc: 0 };
+            }
+        }),
     );
 }
 

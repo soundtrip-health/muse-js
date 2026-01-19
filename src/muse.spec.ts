@@ -1,13 +1,13 @@
 import { TextDecoder, TextEncoder } from 'text-encoding';
 import { DeviceMock, WebBluetoothMock } from 'web-bluetooth-mock';
-import { EEGReading, PPGReading } from './../dist/lib/muse-interfaces.d';
+import { EEGReading, EventMarker, PPGReading } from './lib/muse-interfaces';
 import { MuseClient } from './muse';
 
-declare var global;
+declare let global: typeof globalThis;
 
 let museDevice: DeviceMock;
 
-function charCodes(s) {
+function charCodes(s: string): number[] {
     return s.split('').map((c) => c.charCodeAt(0));
 }
 
@@ -15,7 +15,7 @@ describe('MuseClient', () => {
     beforeEach(() => {
         museDevice = new DeviceMock('Muse-Test', [0xfe8d]);
         global.navigator = global.navigator || {};
-        global.navigator.bluetooth = new WebBluetoothMock([museDevice]);
+        global.navigator.bluetooth = new WebBluetoothMock([museDevice]) as any;
         Object.assign(global, { TextDecoder, TextEncoder });
     });
 
@@ -72,7 +72,7 @@ describe('MuseClient', () => {
         });
     });
 
-    describe('start', async () => {
+    describe('start', () => {
         it('should send `h`, `s`, `p21` and `d` commands to the EEG headset', async () => {
             const client = new MuseClient();
             const controlCharacteristic = museDevice
@@ -133,7 +133,7 @@ describe('MuseClient', () => {
             const client = new MuseClient();
             await client.connect();
 
-            let lastReading: EEGReading;
+            let lastReading!: EEGReading;
             client.eegReadings.subscribe((reading) => {
                 lastReading = reading;
             });
@@ -149,18 +149,7 @@ describe('MuseClient', () => {
                 electrode: 3,
                 index: 1,
                 samples: [
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
+                    -687.5, -562.5, -687.5, -562.5, -687.5, -562.5, -687.5, -562.5, -687.5, -562.5, -687.5, -562.5,
                 ],
                 timestamp: expect.any(Number),
             });
@@ -403,7 +392,7 @@ describe('MuseClient', () => {
             const client = new MuseClient();
             await client.connect();
 
-            const markers = [];
+            const markers: EventMarker[] = [];
             client.eventMarkers.subscribe((eventMarker) => {
                 markers.push(eventMarker);
             });
@@ -421,7 +410,7 @@ describe('MuseClient', () => {
             const client = new MuseClient();
             await client.connect();
 
-            const markers = [];
+            const markers: EventMarker[] = [];
             client.eventMarkers.subscribe((eventMarker) => {
                 markers.push(eventMarker);
             });
