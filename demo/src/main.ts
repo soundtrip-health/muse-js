@@ -109,32 +109,40 @@ async function connect() {
         });
 
         if (enablePpg) {
-            client.ppgReadings.subscribe((ppg) => {
-                // Display PPG channel values (using last sample for simplicity)
-                const lastSample = ppg.samples[ppg.samples.length - 1];
-                document.getElementById('ppg-ambient')!.innerText = lastSample.ambient.toString();
-                document.getElementById('ppg-infrared')!.innerText = lastSample.infrared.toString();
-                document.getElementById('ppg-red')!.innerText = lastSample.red.toString();
-            });
-
-            // Simple heart rate calculation from PPG infrared channel
-            // This is a very basic peak detection - a real implementation would be more sophisticated
+            // PPGReading has ppgChannel (0=ambient, 1=infrared, 2=red) and samples array
             const ppgBuffer: number[] = [];
             const BUFFER_SIZE = 100;
-            client.ppgReadings.subscribe((ppg) => {
-                ppg.samples.forEach((sample) => {
-                    ppgBuffer.push(sample.infrared);
-                    if (ppgBuffer.length > BUFFER_SIZE) {
-                        ppgBuffer.shift();
-                    }
-                });
 
-                // Calculate heart rate every 100 samples (roughly every 2 seconds at 50Hz)
-                if (ppgBuffer.length >= BUFFER_SIZE) {
-                    const hr = calculateHeartRate(ppgBuffer);
-                    if (hr > 0) {
-                        document.getElementById('heart-rate')!.innerText = hr.toFixed(0);
+            client.ppgReadings.subscribe((ppg) => {
+                if (!ppg.samples || ppg.samples.length === 0) {
+                    return;
+                }
+
+                // Display the last sample from this channel
+                const lastSample = ppg.samples[ppg.samples.length - 1];
+
+                // Update the appropriate channel display based on ppgChannel
+                if (ppg.ppgChannel === 0) {
+                    document.getElementById('ppg-ambient')!.innerText = lastSample.toFixed(0);
+                } else if (ppg.ppgChannel === 1) {
+                    document.getElementById('ppg-infrared')!.innerText = lastSample.toFixed(0);
+                    // Use infrared channel for heart rate calculation
+                    ppg.samples.forEach((sample) => {
+                        ppgBuffer.push(sample);
+                        if (ppgBuffer.length > BUFFER_SIZE) {
+                            ppgBuffer.shift();
+                        }
+                    });
+
+                    // Calculate heart rate every 100 samples (roughly every 2 seconds at 50Hz)
+                    if (ppgBuffer.length >= BUFFER_SIZE) {
+                        const hr = calculateHeartRate(ppgBuffer);
+                        if (hr > 0) {
+                            document.getElementById('heart-rate')!.innerText = hr.toFixed(0);
+                        }
                     }
+                } else if (ppg.ppgChannel === 2) {
+                    document.getElementById('ppg-red')!.innerText = lastSample.toFixed(0);
                 }
             });
         }
