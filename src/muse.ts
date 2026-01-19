@@ -1,5 +1,5 @@
 import { BehaviorSubject, fromEvent, merge, Observable, Subject } from 'rxjs';
-import { filter, first, map, share, take } from 'rxjs/operators';
+import { concatMap, filter, first, map, share, take } from 'rxjs/operators';
 
 import {
     AccelerometerData,
@@ -20,10 +20,12 @@ import {
     parseGyroscope,
     parseTelemetry,
 } from './lib/muse-parse';
+import { parseMuse3Packet } from './lib/muse3-parse';
 import { decodeResponse, encodeCommand, observableCharacteristic } from './lib/muse-utils';
 
 export { zipSamples, EEGSample } from './lib/zip-samples';
 export { zipSamplesPpg, PPGSample } from './lib/zip-samplesPpg';
+export { setMuse3DebugMode } from './lib/muse3-parse';
 export {
     EEGReading,
     PPGReading,
@@ -60,10 +62,8 @@ export const EEG_FREQUENCY = 256;
 export const EEG_SAMPLES_PER_READING = 12;
 
 // Muse 3 (S Athena) Characteristics
-// Note: Muse 3 uses different data characteristics for its advanced sensors
-// TODO: Implement Muse 3 data streaming using these characteristics
-const _MUSE3_EEG_CHARACTERISTIC = '273e0013-4c4d-454d-96be-f03bac821358';
-const _MUSE3_OTHER_CHARACTERISTIC = '273e0014-4c4d-454d-96be-f03bac821358';
+const MUSE3_EEG_CHARACTERISTIC = '273e0013-4c4d-454d-96be-f03bac821358';
+const MUSE3_OTHER_CHARACTERISTIC = '273e0014-4c4d-454d-96be-f03bac821358';
 
 // Muse 3 Presets
 // p1041, p1042: EEG8 + Optics16 + ACC/GYRO + Battery (bright LED)
@@ -121,9 +121,12 @@ export class MuseClient {
     private controlChar!: BluetoothRemoteGATTCharacteristic;
     private eegCharacteristics!: BluetoothRemoteGATTCharacteristic[];
     private ppgCharacteristics!: BluetoothRemoteGATTCharacteristic[];
+    private muse3EegChar?: BluetoothRemoteGATTCharacteristic;
+    private muse3OtherChar?: BluetoothRemoteGATTCharacteristic;
 
     private lastIndex: number | null = null;
     private lastTimestamp: number | null = null;
+    private muse3PacketIndex: number = 0;
 
     async connect(gatt?: BluetoothRemoteGATTServer) {
         console.log('muse-js v4.0.0 - Muse 3 detection enabled');
@@ -155,10 +158,11 @@ export class MuseClient {
 
         // Try to detect device type by checking for Muse 3 characteristics
         try {
-            const muse3EegChar = await service.getCharacteristic(_MUSE3_EEG_CHARACTERISTIC);
-            if (muse3EegChar) {
+            this.muse3EegChar = await service.getCharacteristic(MUSE3_EEG_CHARACTERISTIC);
+            if (this.muse3EegChar) {
                 this.deviceType = MuseDeviceType.MUSE_3;
                 console.log('Detected Muse 3 (S Athena) device');
+                this.muse3OtherChar = await service.getCharacteristic(MUSE3_OTHER_CHARACTERISTIC);
             }
         } catch {
             this.deviceType = MuseDeviceType.MUSE_1_2_S;
@@ -228,10 +232,124 @@ export class MuseClient {
         const eegObservables = [];
 
         if (this.deviceType === MuseDeviceType.MUSE_3) {
-            console.warn('Muse 3 EEG streaming not yet fully implemented');
-            console.log('See MUSE3_IMPLEMENTATION.md for implementation details');
-            // TODO: Implement Muse 3 EEG streaming using _MUSE3_EEG_CHARACTERISTIC
-            this.eegReadings = new Subject<EEGReading>();
+            console.log('Setting up Muse 3 data streaming...');
+            // Combine EEG and Other characteristics for Muse 3
+            const muse3Observables = [];
+
+            if (this.muse3EegChar) {
+                muse3Observables.push(
+                    (await observableCharacteristic(this.muse3EegChar)).pipe(
+                        map((data) => {
+                            const parsed = parseMuse3Packet(data);
+                            return { data, parsed, characteristic: 'EEG' };
+                        }),
+                    ),
+                );
+            }
+
+            if (this.muse3OtherChar) {
+                muse3Observables.push(
+                    (await observableCharacteristic(this.muse3OtherChar)).pipe(
+                        map((data) => {
+                            const parsed = parseMuse3Packet(data);
+                            return { data, parsed, characteristic: 'OTHER' };
+                        }),
+                    ),
+                );
+            }
+
+            const muse3Data = merge(...muse3Observables).pipe(share());
+
+            // Extract EEG readings from parsed packets
+            this.eegReadings = muse3Data.pipe(
+                filter((packet) => packet.parsed !== null && packet.parsed.subpackets.length > 0),
+                concatMap((packet) => {
+                    const readings: EEGReading[] = [];
+                    const timestamp = new Date().getTime();
+                    const index = this.muse3PacketIndex++;
+
+                    // Process each subpacket
+                    packet.parsed!.subpackets.forEach((subpkt) => {
+                        if (subpkt.sensorType === 'EEG') {
+                            // subpkt.data is [samples][channels]
+                            // We need to transpose it to [channels][samples]
+                            const nSamples = subpkt.data.length;
+                            const nChannels = subpkt.nChannels;
+
+                            for (let ch = 0; ch < nChannels; ch++) {
+                                const samples: number[] = [];
+                                for (let s = 0; s < nSamples; s++) {
+                                    samples.push(subpkt.data[s][ch]);
+                                }
+
+                                readings.push({
+                                    electrode: ch,
+                                    index,
+                                    samples,
+                                    timestamp,
+                                });
+                            }
+                        }
+                    });
+
+                    return readings;
+                }),
+            );
+
+            // Extract IMU data (accelerometer and gyroscope) from parsed packets
+            const imuData = muse3Data.pipe(
+                filter(
+                    (packet) =>
+                        packet.parsed !== null && packet.parsed.subpackets.some((sp) => sp.sensorType === 'ACCGYRO'),
+                ),
+                share(),
+            );
+
+            this.accelerometerData = imuData.pipe(
+                map((packet) => {
+                    const accgyroSubpkt = packet.parsed!.subpackets.find((sp) => sp.sensorType === 'ACCGYRO');
+                    if (!accgyroSubpkt) {
+                        return null;
+                    }
+
+                    // data is [samples][6 channels: ax,ay,az,gx,gy,gz]
+                    const samples = accgyroSubpkt.data.map((sample) => ({
+                        x: sample[0],
+                        y: sample[1],
+                        z: sample[2],
+                    }));
+
+                    return {
+                        sequenceId: this.muse3PacketIndex++,
+                        samples,
+                    };
+                }),
+                filter((data) => data !== null),
+            );
+
+            this.gyroscopeData = imuData.pipe(
+                map((packet) => {
+                    const accgyroSubpkt = packet.parsed!.subpackets.find((sp) => sp.sensorType === 'ACCGYRO');
+                    if (!accgyroSubpkt) {
+                        return null;
+                    }
+
+                    // data is [samples][6 channels: ax,ay,az,gx,gy,gz]
+                    const samples = accgyroSubpkt.data.map((sample) => ({
+                        x: sample[3],
+                        y: sample[4],
+                        z: sample[5],
+                    }));
+
+                    return {
+                        sequenceId: this.muse3PacketIndex++,
+                        samples,
+                    };
+                }),
+                filter((data) => data !== null),
+            );
+
+            console.log('Muse 3 data streaming configured');
         } else {
             // Muse 1/2/S (Classic) EEG characteristics
             const channelCount = this.enableAux ? EEG_CHARACTERISTICS.length : 4;
@@ -263,18 +381,74 @@ export class MuseClient {
         await this.controlChar.writeValue(encodeCommand(cmd));
     }
 
-    async start() {
-        await this.pause();
-        let preset = 'p21';
-        if (this.enablePpg) {
-            preset = 'p50';
-        } else if (this.enableAux) {
-            preset = 'p20';
-        }
+    async start(muse3Preset: MusePreset = 'p1041') {
+        if (this.deviceType === MuseDeviceType.MUSE_3) {
+            console.log('Initializing Muse 3 with preset:', muse3Preset);
+            await this.initializeMuse3(muse3Preset);
+        } else {
+            await this.pause();
+            let preset = 'p21';
+            if (this.enablePpg) {
+                preset = 'p50';
+            } else if (this.enableAux) {
+                preset = 'p20';
+            }
 
-        await this.controlChar.writeValue(encodeCommand(preset));
-        await this.controlChar.writeValue(encodeCommand('s'));
-        await this.resume();
+            await this.controlChar.writeValue(encodeCommand(preset));
+            await this.controlChar.writeValue(encodeCommand('s'));
+            await this.resume();
+        }
+    }
+
+    /**
+     * Initialize Muse 3 device with proper startup sequence
+     * Critical: dc001 must be sent TWICE!
+     */
+    private async initializeMuse3(preset: MusePreset) {
+        const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        try {
+            // Version query
+            await this.sendCommand('v6');
+            await delay(200);
+
+            // Status query
+            await this.sendCommand('s');
+            await delay(200);
+
+            // Halt/reset
+            await this.sendCommand('h');
+            await delay(200);
+
+            // Apply preset
+            console.log(`Applying Muse 3 preset: ${preset}`);
+            await this.sendCommand(preset);
+            await delay(200);
+
+            // Status query after preset
+            await this.sendCommand('s');
+            await delay(200);
+
+            // Start streaming - MUST send dc001 TWICE (critical!)
+            console.log('Starting data stream (sending dc001 twice)...');
+            await this.sendCommand('dc001');
+            await delay(100);
+            await this.sendCommand('dc001');
+            await delay(100);
+
+            // Optional: Enable low-latency mode
+            await this.sendCommand('L1');
+            await delay(300);
+
+            // Final status query
+            await this.sendCommand('s');
+            await delay(200);
+
+            console.log('Muse 3 initialization complete');
+        } catch (err) {
+            console.error('Error during Muse 3 initialization:', err);
+            throw err;
+        }
     }
 
     async pause() {

@@ -1,4 +1,11 @@
-import { channelNames, EEGReading, MuseClient } from '../../dist/index.mjs';
+import {
+    channelNames,
+    muse3ChannelNames,
+    EEGReading,
+    MuseClient,
+    MuseDeviceType,
+    setMuse3DebugMode,
+} from '../../dist/index.mjs';
 
 // Simple heart rate calculation using peak detection
 function calculateHeartRate(ppgBuffer: number[]): number {
@@ -38,10 +45,6 @@ async function connect() {
     const canvases = Array.from(document.querySelectorAll('.electrode-item canvas')) as HTMLCanvasElement[];
     const canvasCtx = canvases.map((canvas) => canvas.getContext('2d'));
 
-    graphTitles.forEach((item, index) => {
-        item.textContent = channelNames[index];
-    });
-
     function plot(reading: EEGReading) {
         const canvas = canvases[reading.electrode];
         const context = canvasCtx[reading.electrode];
@@ -72,6 +75,14 @@ async function connect() {
     const ppgCheckbox = document.getElementById('enable-ppg') as HTMLInputElement;
     const enablePpg = ppgCheckbox && ppgCheckbox.checked;
 
+    // Check if debug mode should be enabled
+    const debugCheckbox = document.getElementById('enable-debug') as HTMLInputElement;
+    const enableDebug = debugCheckbox && debugCheckbox.checked;
+    if (enableDebug) {
+        setMuse3DebugMode(true);
+        console.log('Muse 3 debug mode enabled');
+    }
+
     try {
         client.enableAux = true;
 
@@ -86,6 +97,26 @@ async function connect() {
         }
 
         await client.connect();
+
+        // Update UI based on device type
+        document.getElementById('device-type')!.innerText = client.deviceType;
+
+        // Update channel names based on device type
+        const names = client.deviceType === MuseDeviceType.MUSE_3 ? muse3ChannelNames : channelNames;
+        graphTitles.forEach((item, index) => {
+            if (index < names.length) {
+                item.textContent = names[index];
+            }
+        });
+
+        // Show Muse 3-specific electrodes if Muse 3 detected
+        if (client.deviceType === MuseDeviceType.MUSE_3) {
+            const muse3Elements = document.querySelectorAll('.muse3-only');
+            muse3Elements.forEach((element) => {
+                (element as HTMLElement).style.display = 'block';
+            });
+        }
+
         await client.start();
         document.getElementById('headset-name')!.innerText = client.deviceName || 'unknown';
         client.eegReadings.subscribe((reading) => {

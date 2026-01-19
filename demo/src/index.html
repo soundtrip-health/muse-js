@@ -36,12 +36,21 @@
         </label>
     </div>
 
+    <div>
+        <label>
+            <input type="checkbox" id="enable-debug">
+            Enable Debug Mode (console logs)
+        </label>
+    </div>
+
     <button id="connect-button">
         Connect!
     </button>
 
     <div>
-        Name: <span id="headset-name">unknown</span>
+        Name: <span id="headset-name">unknown</span>,
+        Device Type: <span id="device-type">unknown</span>
+        <br>
         Firmware: <span id="firmware-version">unknown</span>,
         Hardware version: <span id="hardware-version">unknown</span>.
     </div>
@@ -100,6 +109,21 @@
         <div class="electrode-item">
             <h3>Electrode 5</h3>
             <canvas id="electrode5"></canvas>
+        </div>
+
+        <div class="electrode-item muse3-only" style="display:none;">
+            <h3>Electrode 6</h3>
+            <canvas id="electrode6"></canvas>
+        </div>
+
+        <div class="electrode-item muse3-only" style="display:none;">
+            <h3>Electrode 7</h3>
+            <canvas id="electrode7"></canvas>
+        </div>
+
+        <div class="electrode-item muse3-only" style="display:none;">
+            <h3>Electrode 8</h3>
+            <canvas id="electrode8"></canvas>
         </div>
     </div>
 
