@@ -34,7 +34,7 @@ Muse 3 (S Athena) data streaming has been implemented in muse-js v4.0.0. However
 
 ### 3. Data Streaming
 - ✅ **EEG Streaming** - 8 channels at 256 Hz
-- ✅ **PPG Streaming** - Multi-channel photoplethysmography
+- 🔄 **PPG Streaming** - Multi-channel photoplethysmography (not yet implemented for muse 3)
 - ✅ **IMU Streaming** - Accelerometer + Gyroscope at 52 Hz
 - ✅ **RxJS Observables** - Reactive data streams for all sensors
 
@@ -56,10 +56,10 @@ Muse 3 (S Athena) data streaming has been implemented in muse-js v4.0.0. However
 The **`dc001` command must be sent TWICE** to start streaming. This is an undocumented requirement discovered by the amused-py project!
 
 ### Supported Presets
-- `p1041` - Full sensor mode (8 EEG + 16 PPG + IMU) ⭐ Recommended
+- `p1041` - Full sensor mode (8 EEG + 16 PPG + IMU) 
 - `p1042` - Same as p1041
 - `p1034` - 8 EEG + 8 PPG + IMU
-- `p1035` - 4 EEG + 4 PPG + IMU
+- `p1035` - 4 EEG + 4 PPG + IMU ⭐ Recommended
 - `p1044` - 8 EEG + 8 PPG + IMU (dim LED)
 - `p20`, `p21`, `p50`, `p51`, `p60`, `p61` - EEG only variants
 

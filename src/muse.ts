@@ -349,6 +349,49 @@ export class MuseClient {
                 filter((data) => data !== null),
             );
 
+            // Extract PPG data (OPTICS) from parsed packets
+            const ppgData = muse3Data.pipe(
+                filter(
+                    (packet) =>
+                        packet.parsed !== null && packet.parsed.subpackets.some((sp) => sp.sensorType === 'OPTICS'),
+                ),
+                share(),
+            );
+
+            this.ppgReadings = ppgData.pipe(
+                concatMap((packet) => {
+                    const readings: PPGReading[] = [];
+                    const timestamp = new Date().getTime();
+                    const index = this.muse3PacketIndex++;
+
+                    const opticsSubpkt = packet.parsed!.subpackets.find((sp) => sp.sensorType === 'OPTICS');
+                    if (!opticsSubpkt) {
+                        return readings;
+                    }
+
+                    // data is [samples][channels]
+                    const nSamples = opticsSubpkt.data.length;
+                    const nChannels = opticsSubpkt.nChannels;
+
+                    // Transform to PPGReading format [channels][samples]
+                    for (let ch = 0; ch < nChannels; ch++) {
+                        const samples: number[] = [];
+                        for (let s = 0; s < nSamples; s++) {
+                            samples.push(opticsSubpkt.data[s][ch]);
+                        }
+
+                        readings.push({
+                            ppgChannel: ch,
+                            index,
+                            samples,
+                            timestamp,
+                        });
+                    }
+
+                    return readings;
+                }),
+            );
+
             console.log('Muse 3 data streaming configured');
         } else {
             // Muse 1/2/S (Classic) EEG characteristics
@@ -381,7 +424,7 @@ export class MuseClient {
         await this.controlChar.writeValue(encodeCommand(cmd));
     }
 
-    async start(muse3Preset: MusePreset = 'p1041') {
+    async start(muse3Preset: MusePreset = 'p1035') {
         if (this.deviceType === MuseDeviceType.MUSE_3) {
             console.log('Initializing Muse 3 with preset:', muse3Preset);
             await this.initializeMuse3(muse3Preset);

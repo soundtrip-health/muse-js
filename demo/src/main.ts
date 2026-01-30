@@ -7,6 +7,26 @@ import {
     setMuse3DebugMode,
 } from '../../dist/index.mjs';
 
+// Recording state
+interface RecordingData {
+    deviceInfo: {
+        name: string;
+        deviceType: string;
+        firmware?: string;
+        hardware?: string;
+    };
+    startTime: number;
+    endTime?: number;
+    eegReadings: any[];
+    ppgReadings: any[];
+    accelerometerData: any[];
+    gyroscopeData: any[];
+    telemetryData: any[];
+}
+
+let isRecording = false;
+let recordingData: RecordingData | null = null;
+
 // Simple heart rate calculation using peak detection
 function calculateHeartRate(ppgBuffer: number[]): number {
     if (ppgBuffer.length < 20) return 0;
@@ -67,8 +87,18 @@ async function connect() {
     }
 
     const client = new MuseClient();
+
+    // Store client reference globally for recording controls
+    (window as any).museClient = client;
+
     client.connectionStatus.subscribe((status) => {
         console.log(status ? 'Connected!' : 'Disconnected');
+
+        // Enable/disable recording button based on connection status
+        const recordButton = document.getElementById('record-button') as HTMLButtonElement;
+        if (recordButton) {
+            recordButton.disabled = !status;
+        }
     });
 
     // Check if PPG should be enabled
@@ -121,22 +151,38 @@ async function connect() {
         document.getElementById('headset-name')!.innerText = client.deviceName || 'unknown';
         client.eegReadings.subscribe((reading) => {
             plot(reading);
+            // Cache data during recording
+            if (isRecording && recordingData) {
+                recordingData.eegReadings.push(reading);
+            }
         });
         client.telemetryData.subscribe((reading) => {
             document.getElementById('temperature')!.innerText = reading.temperature.toString() + '℃';
             document.getElementById('batteryLevel')!.innerText = reading.batteryLevel.toFixed(2) + '%';
+            // Cache data during recording
+            if (isRecording && recordingData) {
+                recordingData.telemetryData.push(reading);
+            }
         });
         client.accelerometerData.subscribe((accel) => {
             // Data is already scaled to G in parseAccelerometer (scale: 0.0000610352 = 2.0/32768)
             document.getElementById('accelerometer-x')!.innerText = accel.samples[2].x.toFixed(2);
             document.getElementById('accelerometer-y')!.innerText = accel.samples[2].y.toFixed(2);
             document.getElementById('accelerometer-z')!.innerText = accel.samples[2].z.toFixed(2);
+            // Cache data during recording
+            if (isRecording && recordingData) {
+                recordingData.accelerometerData.push(accel);
+            }
         });
         client.gyroscopeData.subscribe((gyro) => {
             // Data is already scaled to °/s in parseGyroscope (scale: 0.0074768 ≈ 250/32768)
             document.getElementById('gyroscope-x')!.innerText = gyro.samples[2].x.toFixed(2);
             document.getElementById('gyroscope-y')!.innerText = gyro.samples[2].y.toFixed(2);
             document.getElementById('gyroscope-z')!.innerText = gyro.samples[2].z.toFixed(2);
+            // Cache data during recording
+            if (isRecording && recordingData) {
+                recordingData.gyroscopeData.push(gyro);
+            }
         });
 
         if (enablePpg) {
@@ -147,6 +193,11 @@ async function connect() {
             client.ppgReadings.subscribe((ppg) => {
                 if (!ppg.samples || ppg.samples.length === 0) {
                     return;
+                }
+
+                // Cache data during recording
+                if (isRecording && recordingData) {
+                    recordingData.ppgReadings.push(ppg);
                 }
 
                 // Display the last sample from this channel
@@ -181,10 +232,104 @@ async function connect() {
         await client.deviceInfo().then((deviceInfo) => {
             document.getElementById('hardware-version')!.innerText = deviceInfo.hw;
             document.getElementById('firmware-version')!.innerText = deviceInfo.fw;
+            // Store device info globally for recording
+            (window as any).museDeviceInfo = deviceInfo;
         });
     } catch (err) {
         console.error('Connection failed', err);
     }
+}
+
+function startRecording(client: MuseClient) {
+    isRecording = true;
+    const deviceInfo = (window as any).museDeviceInfo;
+    recordingData = {
+        deviceInfo: {
+            name: client.deviceName || 'unknown',
+            deviceType: client.deviceType,
+            firmware: deviceInfo?.fw,
+            hardware: deviceInfo?.hw,
+        },
+        startTime: Date.now(),
+        eegReadings: [],
+        ppgReadings: [],
+        accelerometerData: [],
+        gyroscopeData: [],
+        telemetryData: [],
+    };
+
+    // Update UI
+    const recordButton = document.getElementById('record-button') as HTMLButtonElement;
+    const statusSpan = document.getElementById('recording-status');
+    if (recordButton) {
+        recordButton.textContent = 'Stop Recording';
+    }
+    if (statusSpan) {
+        statusSpan.textContent = '🔴 Recording...';
+        statusSpan.style.color = 'red';
+    }
+
+    console.log('Recording started');
+}
+
+function stopRecording() {
+    if (!isRecording || !recordingData) {
+        return;
+    }
+
+    isRecording = false;
+    recordingData.endTime = Date.now();
+
+    // Save to localStorage
+    const dataKey = `muse-recording-${recordingData.startTime}`;
+    try {
+        localStorage.setItem(dataKey, JSON.stringify(recordingData));
+        console.log(`Recording saved to localStorage: ${dataKey}`);
+        console.log(
+            `Total data points: EEG=${recordingData.eegReadings.length}, PPG=${recordingData.ppgReadings.length}, IMU=${recordingData.accelerometerData.length}`,
+        );
+    } catch (error) {
+        console.error('Failed to save recording to localStorage:', error);
+        alert('Failed to save recording. Storage might be full.');
+    }
+
+    // Update UI
+    const recordButton = document.getElementById('record-button') as HTMLButtonElement;
+    const downloadButton = document.getElementById('download-button') as HTMLButtonElement;
+    const statusSpan = document.getElementById('recording-status');
+
+    if (recordButton) {
+        recordButton.textContent = 'Start Recording';
+    }
+    if (downloadButton) {
+        downloadButton.disabled = false;
+    }
+    if (statusSpan) {
+        const duration = ((recordingData.endTime! - recordingData.startTime) / 1000).toFixed(1);
+        statusSpan.textContent = `✅ Saved (${duration}s, ${recordingData.eegReadings.length} EEG samples)`;
+        statusSpan.style.color = 'green';
+    }
+}
+
+function downloadLatestRecording() {
+    if (!recordingData) {
+        alert('No recording available. Please record some data first.');
+        return;
+    }
+
+    const dataStr = JSON.stringify(recordingData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+
+    const downloadLink = document.createElement('a');
+    downloadLink.href = url;
+    downloadLink.download = `muse-recording-${recordingData.startTime}.json`;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(url);
+
+    console.log('Recording downloaded');
 }
 
 // Attach event listener when DOM is ready
@@ -193,5 +338,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (button) {
         button.addEventListener('click', connect);
         console.log('Connect button ready!');
+    }
+
+    const recordButton = document.getElementById('record-button');
+    if (recordButton) {
+        recordButton.addEventListener('click', () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                const client = (window as any).museClient;
+                if (client) {
+                    startRecording(client);
+                }
+            }
+        });
+    }
+
+    const downloadButton = document.getElementById('download-button');
+    if (downloadButton) {
+        downloadButton.addEventListener('click', downloadLatestRecording);
     }
 });
