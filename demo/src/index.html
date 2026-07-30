@@ -29,12 +29,38 @@
 </head>
 
 <body>
-    <button onclick="connect()">
+    <div>
+        <label>
+            <input type="checkbox" id="enable-ppg">
+            Enable PPG (Heart Rate) - for Muse 2/S only
+        </label>
+    </div>
+
+    <div>
+        <label>
+            <input type="checkbox" id="enable-debug">
+            Enable Debug Mode (console logs)
+        </label>
+    </div>
+
+    <button id="connect-button">
         Connect!
     </button>
 
+    <div style="margin-top: 10px;">
+        <button id="record-button" disabled>
+            Start Recording
+        </button>
+        <button id="download-button" disabled>
+            Download Data (JSON)
+        </button>
+        <span id="recording-status" style="margin-left: 10px; font-weight: bold;"></span>
+    </div>
+
     <div>
-        Name: <span id="headset-name">unknown</span>
+        Name: <span id="headset-name">unknown</span>,
+        Device Type: <span id="device-type">unknown</span>
+        <br>
         Firmware: <span id="firmware-version">unknown</span>,
         Hardware version: <span id="hardware-version">unknown</span>.
     </div>
@@ -44,10 +70,29 @@
     </div>
 
     <div>
-        Accelerometer: x=<span 
-        id="accelerometer-x">?</span>, y=<span 
-        id="accelerometer-y">?</span>, z=<span 
+        Accelerometer (g): x=<span
+        id="accelerometer-x">?</span>, y=<span
+        id="accelerometer-y">?</span>, z=<span
         id="accelerometer-z">?</span>
+    </div>
+
+    <div>
+        Gyroscope (°/s): x=<span
+        id="gyroscope-x">?</span>, y=<span
+        id="gyroscope-y">?</span>, z=<span
+        id="gyroscope-z">?</span>
+    </div>
+
+    <div id="ppg-section" style="display: none;">
+        <h3>PPG (Photoplethysmography) / Heart Rate</h3>
+        <div>
+            Heart Rate: <span id="heart-rate">--</span> BPM
+        </div>
+        <div>
+            Ambient: <span id="ppg-ambient">?</span>,
+            Infrared: <span id="ppg-infrared">?</span>,
+            Red: <span id="ppg-red">?</span>
+        </div>
     </div>
 
     <div class="electrode-section">
@@ -75,9 +120,24 @@
             <h3>Electrode 5</h3>
             <canvas id="electrode5"></canvas>
         </div>
+
+        <div class="electrode-item muse3-only" style="display:none;">
+            <h3>Electrode 6</h3>
+            <canvas id="electrode6"></canvas>
+        </div>
+
+        <div class="electrode-item muse3-only" style="display:none;">
+            <h3>Electrode 7</h3>
+            <canvas id="electrode7"></canvas>
+        </div>
+
+        <div class="electrode-item muse3-only" style="display:none;">
+            <h3>Electrode 8</h3>
+            <canvas id="electrode8"></canvas>
+        </div>
     </div>
 
-    $bundles
+    <script type="module" src="./main.ts"></script>
 </body>
 
 </html>

@@ -1,22 +1,44 @@
 import { TextDecoder, TextEncoder } from 'text-encoding';
 import { DeviceMock, WebBluetoothMock } from 'web-bluetooth-mock';
-import { EEGReading, PPGReading } from './../dist/lib/muse-interfaces.d';
+import { EEGReading, EventMarker, PPGReading } from './lib/muse-interfaces';
 import { MuseClient } from './muse';
 
-declare var global;
+declare let global: typeof globalThis;
 
 let museDevice: DeviceMock;
 
-function charCodes(s) {
+// Muse 3 characteristic UUID - used to detect device type
+const MUSE3_EEG_CHARACTERISTIC = '273e0013-4c4d-454d-96be-f03bac821358';
+
+function charCodes(s: string): number[] {
     return s.split('').map((c) => c.charCodeAt(0));
+}
+
+/**
+ * Configure mock to simulate a Classic Muse (1/2/S) device by making
+ * the Muse 3 characteristic throw an error when accessed
+ */
+function configureAsClassicMuse(device: DeviceMock) {
+    const service = device.getServiceMock(0xfe8d);
+    const originalGetCharacteristic = service.getCharacteristic.bind(service);
+
+    service.getCharacteristic = jest.fn((uuid: string) => {
+        if (uuid === MUSE3_EEG_CHARACTERISTIC) {
+            return Promise.reject(new Error('Characteristic not found'));
+        }
+        return originalGetCharacteristic(uuid);
+    });
 }
 
 describe('MuseClient', () => {
     beforeEach(() => {
         museDevice = new DeviceMock('Muse-Test', [0xfe8d]);
         global.navigator = global.navigator || {};
-        global.navigator.bluetooth = new WebBluetoothMock([museDevice]);
+        global.navigator.bluetooth = new WebBluetoothMock([museDevice]) as any;
         Object.assign(global, { TextDecoder, TextEncoder });
+
+        // Configure as Classic Muse by default for existing tests
+        configureAsClassicMuse(museDevice);
     });
 
     describe('connect', () => {
@@ -72,7 +94,7 @@ describe('MuseClient', () => {
         });
     });
 
-    describe('start', async () => {
+    describe('start', () => {
         it('should send `h`, `s`, `p21` and `d` commands to the EEG headset', async () => {
             const client = new MuseClient();
             const controlCharacteristic = museDevice
@@ -133,7 +155,7 @@ describe('MuseClient', () => {
             const client = new MuseClient();
             await client.connect();
 
-            let lastReading: EEGReading;
+            let lastReading!: EEGReading;
             client.eegReadings.subscribe((reading) => {
                 lastReading = reading;
             });
@@ -149,18 +171,7 @@ describe('MuseClient', () => {
                 electrode: 3,
                 index: 1,
                 samples: [
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
-                    -687.5,
-                    -562.5,
+                    -687.5, -562.5, -687.5, -562.5, -687.5, -562.5, -687.5, -562.5, -687.5, -562.5, -687.5, -562.5,
                 ],
                 timestamp: expect.any(Number),
             });
@@ -403,7 +414,7 @@ describe('MuseClient', () => {
             const client = new MuseClient();
             await client.connect();
 
-            const markers = [];
+            const markers: EventMarker[] = [];
             client.eventMarkers.subscribe((eventMarker) => {
                 markers.push(eventMarker);
             });
@@ -421,7 +432,7 @@ describe('MuseClient', () => {
             const client = new MuseClient();
             await client.connect();
 
-            const markers = [];
+            const markers: EventMarker[] = [];
             client.eventMarkers.subscribe((eventMarker) => {
                 markers.push(eventMarker);
             });

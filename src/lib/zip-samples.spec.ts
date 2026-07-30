@@ -1,4 +1,4 @@
-import { Observable, of } from 'rxjs';
+import { of } from 'rxjs';
 import { toArray } from 'rxjs/operators';
 
 import { zipSamples } from './zip-samples';

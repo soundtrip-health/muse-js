@@ -1,66 +1,88 @@
 {
   "name": "muse-js",
-  "version": "3.3.0",
-  "description": "Muse 2016 EEG Headset JavaScript Library",
-  "main": "dist/muse.js",
-  "typings": "dist/muse.d.ts",
+  "version": "4.0.0",
+  "description": "Muse EEG Headset JavaScript Library (Supports Muse 1, 2, S, and 3)",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "repository": "https://github.com/urish/muse-js",
   "author": "Uri Shaked <uri@codemagic.co.il>",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "muse",
+    "eeg",
+    "web-bluetooth",
+    "rxjs",
+    "neuroscience",
+    "brainwaves",
+    "ppg"
+  ],
   "scripts": {
-    "build": "tsc",
-    "format": "prettier --write src/**.ts **/*.json",
-    "precommit": "lint-staged",
+    "build": "tsup",
+    "format": "prettier --write \"src/**/*.ts\" \"**/*.json\"",
     "prepublish": "npm run build",
-    "start": "node demo/fuse",
-    "lint": "tslint src/**/*.ts demo/src/**/*.ts",
+    "start": "cd demo && npm run dev",
+    "demo:install": "cd demo && npm install",
+    "lint": "eslint \"src/**/*.ts\" \"demo/src/**/*.ts\"",
     "test": "npm run lint && jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "prepare": "husky"
   },
   "files": [
     "dist"
   ],
   "devDependencies": {
-    "@types/jest": "^22.2.3",
-    "event-target-shim": "^3.0.0",
-    "fuse-box": "^2.0.0",
-    "husky": "^0.14.3",
-    "jest": "^22.4.3",
-    "lint-staged": "^7.0.4",
-    "prettier": "^1.12.1",
-    "text-encoding": "^0.6.4",
-    "ts-jest": "^22.4.4",
-    "tslint": "^5.8.0",
-    "typescript": "^2.8.3",
+    "@types/jest": "^29.5.12",
+    "@types/text-encoding": "^0.0.40",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "event-target-shim": "^6.0.2",
+    "husky": "^9.1.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "lint-staged": "^15.2.7",
+    "prettier": "^3.3.3",
+    "text-encoding": "^0.7.0",
+    "ts-jest": "^29.2.0",
+    "tsup": "^8.2.0",
+    "typescript": "^5.7.0",
     "web-bluetooth-mock": "^1.0.2",
-    "zen-observable": "^0.8.8"
+    "zen-observable": "^0.8.15"
   },
   "dependencies": {
-    "@types/web-bluetooth": "^0.0.2",
-    "rxjs": "^6.0.0 || ^5.6.0-forward-compat.4"
+    "@types/web-bluetooth": "^0.0.20",
+    "rxjs": "^7.8.1"
   },
   "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "jsdom",
     "moduleFileExtensions": [
       "ts",
       "js"
     ],
-    "transform": {
-      "^.+\\.ts$": "ts-jest"
-    },
     "testMatch": [
       "**/*.spec.ts"
-    ],
-    "testURL": "http://localhost/"
+    ]
   },
   "lint-staged": {
     "*.{js,json}": [
-      "prettier --write",
-      "git add"
+      "prettier --write"
     ],
     "*.ts": [
       "prettier --write",
-      "tslint --fix",
-      "git add"
+      "eslint --fix"
     ]
   }
 }
